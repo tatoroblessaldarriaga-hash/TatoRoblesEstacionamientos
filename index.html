@@ -23,18 +23,43 @@
   <script>
     (()=>{
       const KEY='reservas-parqueo-v1';
+      const MAKE_WEBHOOK_URL='https://hook.us2.make.com/l017vamnupn8ny737716iq2afa7a7gc6';
       const ids=Array.from({length:15},(_,i)=>`E-${String(i+1).padStart(2,'0')}`);
       let data=load(); let showAvailable=false; let cancelTarget=null; let toastTimer;
       function load(){try{const parsed=JSON.parse(localStorage.getItem(KEY));if(parsed&&typeof parsed==='object')return Object.fromEntries(ids.map(id=>[id,{reservation:parsed[id]?.reservation||null,history:Array.isArray(parsed[id]?.history)?parsed[id].history.slice(0,5):[]}]))}catch{}return Object.fromEntries(ids.map(id=>[id,{reservation:null,history:[]}]))}
       function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch{notify('No se pudo guardar. Revisa el espacio disponible del navegador.')}}
       function safe(text){return String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-      function stamp(){return new Date().toISOString()}
+      function stamp(){return new Date().toISOString()} 
+  async function sendToMake(action,id,reservation){
+  const payload={
+    action:action,
+    event:action,
+    spot:id,
+    name:reservation.name,
+    entry:reservation.entry,
+    exit:reservation.exit,
+    canceler:reservation.canceler||"",
+    timestamp:new Date().toISOString(),
+    source:"TatoRoblesEstacionamientos"
+  };
+  try{
+    await fetch(MAKE_WEBHOOK_URL,{
+      method:"POST",
+      mode:"no-cors",
+      headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify(payload)
+    });
+  }catch(error){
+    console.error("Error al enviar a Make:",error);
+  }
+}
       function addHistory(id,event){data[id].history.unshift(event);data[id].history=data[id].history.slice(0,5)}
       function notify(message){const el=document.getElementById('toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2600)}
       function render(){const tbody=document.getElementById('parking-rows');const visible=ids.filter(id=>!showAvailable||!data[id].reservation);document.getElementById('empty-state').hidden=visible.length!==0;tbody.innerHTML=visible.map(id=>{const item=data[id],r=item.reservation,occupied=!!r;return `<tr data-id="${id}" class="${occupied?'occupied':''}"><td class="spot"><span class="spot-badge">${id}</span></td><td><input class="field name" aria-label="Nombre para ${id}" placeholder="Nombre y apellido" value="${occupied?safe(r.name):''}" ${occupied?'disabled':''} maxlength="80"></td><td><input class="field entry" aria-label="Hora de ingreso para ${id}" type="time" value="${occupied?safe(r.entry):''}" ${occupied?'disabled':''}></td><td><input class="field exit" aria-label="Hora de salida para ${id}" type="time" value="${occupied?safe(r.exit):''}" ${occupied?'disabled':''}></td><td>${occupied?'<button class="action clear" data-action="cancel">Cancelar</button>':'<button class="action register" data-action="register">Registrar</button>'}</td><td><button class="action history-btn" data-action="history" aria-expanded="false">Historial (${item.history.length})</button></td></tr><tr class="history-row" data-history="${id}" hidden><td colspan="6"><div class="history-panel">${item.history.length?item.history.map(ev=>`<div class="event"><span><strong>${ev.type==='reservation'?'Reserva':'Cancelación'}</strong> · ${safe(ev.name)}${ev.canceler?` · canceló: ${safe(ev.canceler)}`:''}${ev.entry?` · ${safe(ev.entry)}–${safe(ev.exit)}`:''}</span><span class="event-meta">${new Date(ev.at).toLocaleString('es-PE',{dateStyle:'medium',timeStyle:'short'})}</span></div>`).join(''):'Aún no hay acciones registradas para este parqueo.'}</div></td></tr>`}).join('');const count=ids.filter(id=>data[id].reservation).length;document.getElementById('available-count').innerHTML=`${15-count} <small>de 15</small>`;document.getElementById('occupied-count').innerHTML=`${count} <small>de 15</small>`;document.getElementById('all-filter').classList.toggle('active',!showAvailable);document.getElementById('available-filter').classList.toggle('active',showAvailable)}
       document.getElementById('today').textContent=new Intl.DateTimeFormat('es-PE',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());
-      document.getElementById('parking-rows').addEventListener('click',e=>{const btn=e.target.closest('button[data-action]');if(!btn)return;const row=btn.closest('tr'),id=row.dataset.id;if(btn.dataset.action==='register'){const name=row.querySelector('.name').value.trim(),entry=row.querySelector('.entry').value,exit=row.querySelector('.exit').value;if(!name||!entry||!exit){notify('Completa el nombre y las dos horas.');return}if(entry>=exit){notify('La hora de salida debe ser posterior al ingreso.');return}if(data[id].reservation){notify('Este parqueo ya está reservado.');render();return}const reservation={name,entry,exit,at:stamp()};data[id].reservation=reservation;addHistory(id,{type:'reservation',...reservation});persist();render();notify(`Reserva registrada en ${id}.`)}else if(btn.dataset.action==='cancel'){cancelTarget=id;document.getElementById('canceler-name').value='';document.getElementById('cancel-error').textContent='';document.getElementById('cancel-dialog').showModal();setTimeout(()=>document.getElementById('canceler-name').focus(),0)}else{const panel=document.querySelector(`[data-history="${id}"]`),open=panel.hidden;panel.hidden=!open;btn.setAttribute('aria-expanded',String(open))}});
-      document.getElementById('cancel-form').addEventListener('submit',e=>{if(e.submitter?.value!=='confirm')return;e.preventDefault();const name=document.getElementById('canceler-name').value.trim();if(!name){document.getElementById('cancel-error').textContent='Ingresa el nombre de quien cancela.';return}const id=cancelTarget,r=data[id]?.reservation;if(!r){document.getElementById('cancel-dialog').close();return}addHistory(id,{type:'cancellation',name:r.name,entry:r.entry,exit:r.exit,canceler:name,at:stamp()});data[id].reservation=null;persist();document.getElementById('cancel-dialog').close();render();notify(`Reserva de ${id} cancelada y registrada.`)});
+      document.getElementById('parking-rows').addEventListener('click',e=>{const btn=e.target.closest('button[data-action]');if(!btn)return;const row=btn.closest('tr'),id=row.dataset.id;if(btn.dataset.action==='register'){const name=row.querySelector('.name').value.trim(),entry=row.querySelector('.entry').value,exit=row.querySelector('.exit').value;if(!name||!entry||!exit){notify('Completa el nombre y las dos horas.');return}if(entry>=exit){notify('La hora de salida debe ser posterior al ingreso.');return}if(data[id].reservation){notify('Este parqueo ya está reservado.');render();return}const reservation={name,entry,exit,at:stamp()};data[id].reservation=reservation;addHistory(id,{type:'reservation',...reservation});sendToMake('REGISTER',id,reservation);persist();render();notify(`Reserva registrada en ${id}.`)}else if(btn.dataset.action==='cancel'){cancelTarget=id;document.getElementById('canceler-name').value='';document.getElementById('cancel-error').textContent='';document.getElementById('cancel-dialog').showModal();setTimeout(()=>document.getElementById('canceler-name').focus(),0)}else{const panel=document.querySelector(`[data-history="${id}"]`),open=panel.hidden;panel.hidden=!open;btn.setAttribute('aria-expanded',String(open))}});
+      document.getElementById('cancel-form').addEventListener('submit',e=>{if(e.submitter?.value!=='confirm')return;e.preventDefault();const name=document.getElementById('canceler-name').value.trim();if(!name){document.getElementById('cancel-error').textContent='Ingresa el nombre de quien cancela.';return}const id=cancelTarget,r=data[id]?.reservation;if(!r){document.getElementById('cancel-dialog').close();return}addHistory(id,{type:'cancellation',name:r.name,entry:r.entry,exit:r.exit,canceler:name,at:stamp()});
+      sendToMake('CANCEL',id,{...r,canceler:name});data[id].reservation=null;persist();document.getElementById('cancel-dialog').close();render();notify(`Reserva de ${id} cancelada y registrada.`)});
       document.getElementById('cancel-dialog').addEventListener('click',e=>{if(e.target===e.currentTarget)e.currentTarget.close()});document.getElementById('all-filter').addEventListener('click',()=>{showAvailable=false;render()});document.getElementById('available-filter').addEventListener('click',()=>{showAvailable=true;render()});
       render();
     })();
