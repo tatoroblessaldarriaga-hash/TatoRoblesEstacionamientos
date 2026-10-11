@@ -30,29 +30,38 @@
       function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch{notify('No se pudo guardar. Revisa el espacio disponible del navegador.')}}
       function safe(text){return String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
       function stamp(){return new Date().toISOString()} 
-  async function sendToMake(action,id,reservation){
-  const payload={
-    action:action,
-    event:action,
-    spot:id,
-    name:reservation.name,
-    entry:reservation.entry,
-    exit:reservation.exit,
-    canceler:reservation.canceler||"",
-    timestamp:new Date().toISOString(),
-    source:"TatoRoblesEstacionamientos"
+  
+async function sendToMake(action,id,reservation){
+  const operation = action === 'REGISTER'
+    ? 'REGISTRAR'
+    : 'CANCELAR';
+
+  const payload = {
+    event_id: `${Date.now()}-${id}-${action}`,
+    operacion: operation,
+    parqueo: id,
+    nombre: reservation.name,
+    hora_ingreso: reservation.entry,
+    hora_salida: reservation.exit,
+    canceler: reservation.canceler || "",
+    timestamp: new Date().toISOString(),
+    fuente: "TatoRoblesEstacionamientos"
   };
-  try{
-    await fetch(MAKE_WEBHOOK_URL,{
-      method:"POST",
-      mode:"no-cors",
-      headers:{"Content-Type":"text/plain;charset=UTF-8"},
-      body:JSON.stringify(payload)
+
+  try {
+    await fetch(MAKE_WEBHOOK_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=UTF-8"
+      },
+      body: JSON.stringify(payload)
     });
-  }catch(error){
-    console.error("Error al enviar a Make:",error);
+  } catch (error) {
+    console.error("Error al enviar a Make:", error);
   }
 }
+
       function addHistory(id,event){data[id].history.unshift(event);data[id].history=data[id].history.slice(0,5)}
       function notify(message){const el=document.getElementById('toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2600)}
       function render(){const tbody=document.getElementById('parking-rows');const visible=ids.filter(id=>!showAvailable||!data[id].reservation);document.getElementById('empty-state').hidden=visible.length!==0;tbody.innerHTML=visible.map(id=>{const item=data[id],r=item.reservation,occupied=!!r;return `<tr data-id="${id}" class="${occupied?'occupied':''}"><td class="spot"><span class="spot-badge">${id}</span></td><td><input class="field name" aria-label="Nombre para ${id}" placeholder="Nombre y apellido" value="${occupied?safe(r.name):''}" ${occupied?'disabled':''} maxlength="80"></td><td><input class="field entry" aria-label="Hora de ingreso para ${id}" type="time" value="${occupied?safe(r.entry):''}" ${occupied?'disabled':''}></td><td><input class="field exit" aria-label="Hora de salida para ${id}" type="time" value="${occupied?safe(r.exit):''}" ${occupied?'disabled':''}></td><td>${occupied?'<button class="action clear" data-action="cancel">Cancelar</button>':'<button class="action register" data-action="register">Registrar</button>'}</td><td><button class="action history-btn" data-action="history" aria-expanded="false">Historial (${item.history.length})</button></td></tr><tr class="history-row" data-history="${id}" hidden><td colspan="6"><div class="history-panel">${item.history.length?item.history.map(ev=>`<div class="event"><span><strong>${ev.type==='reservation'?'Reserva':'Cancelación'}</strong> · ${safe(ev.name)}${ev.canceler?` · canceló: ${safe(ev.canceler)}`:''}${ev.entry?` · ${safe(ev.entry)}–${safe(ev.exit)}`:''}</span><span class="event-meta">${new Date(ev.at).toLocaleString('es-PE',{dateStyle:'medium',timeStyle:'short'})}</span></div>`).join(''):'Aún no hay acciones registradas para este parqueo.'}</div></td></tr>`}).join('');const count=ids.filter(id=>data[id].reservation).length;document.getElementById('available-count').innerHTML=`${15-count} <small>de 15</small>`;document.getElementById('occupied-count').innerHTML=`${count} <small>de 15</small>`;document.getElementById('all-filter').classList.toggle('active',!showAvailable);document.getElementById('available-filter').classList.toggle('active',showAvailable)}
